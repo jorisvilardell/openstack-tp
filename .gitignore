@@ -1,0 +1,11 @@
+# Terraform state contains plaintext credentials and resource attributes.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+crash.log
+
+# Local variable overrides, often holding site-specific or secret values.
+*.auto.tfvars
+terraform.tfvars
+*.pem
