@@ -13,19 +13,18 @@ router. SSH to them goes through the balancer, which doubles as a bastion.
 
 ## Prerequisites
 
-The configuration assumes these already exist and does not manage them:
+These must already exist in the project; the configuration looks them up:
 
 | Resource | Default name | Variable |
 | --- | --- | --- |
-| Tenant network | `lemien` | `private_network_name` |
-| External network | `public` | `external_network_name` |
+| External network | `provider-net` | `external_network_name` |
 | Image | `debian-12` | `image_name` |
 | Flavor | `m1.small` | `flavor_name` |
 | Keypair | `mapaire` | `keypair_name` |
 
-A router between the tenant network and the external network must be in place.
-`terraform destroy` therefore never touches the network, the subnet, the router
-or the keypair.
+Everything else is created by Terraform, including the tenant network, its
+subnet and the router. Only the external network and the keypair are looked
+up rather than managed.
 
 ## Before the first apply
 
@@ -33,25 +32,36 @@ Check these on the remote cloud, in this order:
 
 1. **Quota.** Five `m1.small` instances need 5 vCPU, 10 GB RAM and 100 GB of
    disk. Run `openstack limits show --absolute`.
-2. **Address range.** The fixed addresses (`.11`, `.21`, `.22`, `.31`, `.41`)
-   must fall inside the subnet allocation pool and be free. Run
-   `openstack subnet show <subnet> -c cidr -c allocation_pools` and
-   `openstack port list --network lemien`.
-3. **DNS.** An empty `dns_nameservers` on the subnet means cloud-init cannot
-   resolve the Debian mirrors and every instance boots without its packages.
-4. **External network name.** `openstack network list --external` — the
-   default here is `public`.
-5. **Floating IP.** The tenant is limited to a small number. Release any
+2. **External network name.** `openstack network list --external`. The value
+   lives in `10-infra/terraform.tfvars`, which is untracked; copy it from
+   `terraform.tfvars.example`.
+3. **Floating IP.** The tenant is limited to a small number. Release any
    unattached one with `openstack floating ip list --status DOWN` before
    applying.
 
+## Layout
+
+The stack is split into two root modules with separate states, so the
+instances can be rebuilt without releasing the single floating IP the tenant
+is allowed.
+
+| Layer | Holds | Lifecycle |
+| --- | --- | --- |
+| `10-infra/` | network, subnet, router, security groups, floating IP | rarely changes |
+| `20-platform/` | ports, instances, cloud-init, generated inventory | rebuilt freely |
+
+`20-platform` reads the layer below through `terraform_remote_state`, pointed
+at `../10-infra/terraform.tfstate`. The dependency is one-way.
+
 ## Usage
 
+Apply bottom-up:
+
 ```bash
-source ~/path/to/projet-openrc.sh
-terraform init
-terraform plan
-terraform apply
+source ~/jvilardell-openrc.sh
+
+cd 10-infra && terraform init && terraform apply
+cd ../20-platform && terraform init && terraform apply
 ```
 
 Then follow the outputs:
@@ -59,6 +69,27 @@ Then follow the outputs:
 ```bash
 terraform output site_url
 terraform output -raw ssh_config >> ~/.ssh/config
+```
+
+Destroy top-down, in the reverse order. Destroying `10-infra` while
+`20-platform` still holds instances leaves the lower layer unable to delete
+its network, and releases the floating IP.
+
+```bash
+cd 20-platform && terraform destroy
+cd ../10-infra && terraform destroy
+```
+
+## Ansible
+
+Configuration currently lives in cloud-init, which runs once at first boot:
+changing `haproxy.cfg` means rebuilding the instance. `20-platform` writes
+`ansible/inventory.ini` on every apply, with the tiers grouped and the load
+balancer set as jump host for the private ones, ready for playbooks to take
+that role over.
+
+```bash
+ansible -i ansible/inventory.ini all -m ping
 ```
 
 WordPress serves its installation wizard on first visit. The database, the
