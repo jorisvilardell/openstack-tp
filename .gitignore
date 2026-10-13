@@ -10,4 +10,3 @@ terraform.tfvars
 
 *-openrc.sh
 *openrc*
-tp2/ansible/inventory.ini

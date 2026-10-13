@@ -16,12 +16,6 @@ variable "keypair_name" {
   default     = "mapaire"
 }
 
-variable "ssh_private_key" {
-  description = "Local key matching keypair_name, written into the generated SSH and Ansible configuration."
-  type        = string
-  default     = "~/.ssh/openstack1-mapaire.pem"
-}
-
 variable "frontend_count" {
   description = "Number of frontend instances behind the load balancer."
   type        = number
