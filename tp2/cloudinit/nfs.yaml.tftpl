@@ -1,0 +1,20 @@
+#cloud-config
+package_update: true
+package_upgrade: false
+
+packages:
+  - nfs-kernel-server
+
+write_files:
+  # Squashing every client to www-data keeps file ownership consistent across
+  # both frontends, which is what WordPress needs to write uploads.
+  - path: /etc/exports
+    content: |
+      ${nfs_export} ${client_cidr}(rw,sync,no_subtree_check,all_squash,anonuid=33,anongid=33)
+
+runcmd:
+  - mkdir -p ${nfs_export}
+  - chown 33:33 ${nfs_export}
+  - chmod 0775 ${nfs_export}
+  - exportfs -ra
+  - systemctl enable --now nfs-kernel-server

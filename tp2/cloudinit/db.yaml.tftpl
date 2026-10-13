@@ -1,0 +1,31 @@
+#cloud-config
+package_update: true
+package_upgrade: false
+
+packages:
+  - mariadb-server
+
+write_files:
+  # MariaDB listens on the tenant network instead of loopback so the two
+  # frontends can reach it. The security group is what limits who connects.
+  - path: /etc/mysql/mariadb.conf.d/60-listen.cnf
+    content: |
+      [mysqld]
+      bind-address = ${db_ip}
+      max_connections = 150
+
+  - path: /root/init-wordpress-db.sql
+    permissions: '0600'
+    content: |
+      CREATE DATABASE IF NOT EXISTS `${db_name}`
+        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+      CREATE USER IF NOT EXISTS '${db_user}'@'${client_cidr}'
+        IDENTIFIED BY '${db_password}';
+      GRANT ALL PRIVILEGES ON `${db_name}`.* TO '${db_user}'@'${client_cidr}';
+      FLUSH PRIVILEGES;
+
+runcmd:
+  - systemctl enable --now mariadb
+  - mariadb < /root/init-wordpress-db.sql
+  - rm -f /root/init-wordpress-db.sql
+  - systemctl restart mariadb
