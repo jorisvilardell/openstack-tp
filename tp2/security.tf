@@ -71,7 +71,7 @@ resource "openstack_networking_secgroup_rule_v2" "frontend_icmp" {
   direction         = "ingress"
   ethertype         = "IPv4"
   protocol          = "icmp"
-  remote_ip_prefix  = data.openstack_networking_subnet_v2.private.cidr
+  remote_ip_prefix  = openstack_networking_subnet_v2.private.cidr
 }
 
 resource "openstack_networking_secgroup_v2" "db" {
@@ -104,7 +104,7 @@ resource "openstack_networking_secgroup_rule_v2" "db_icmp" {
   direction         = "ingress"
   ethertype         = "IPv4"
   protocol          = "icmp"
-  remote_ip_prefix  = data.openstack_networking_subnet_v2.private.cidr
+  remote_ip_prefix  = openstack_networking_subnet_v2.private.cidr
 }
 
 resource "openstack_networking_secgroup_v2" "nfs" {
@@ -148,5 +148,5 @@ resource "openstack_networking_secgroup_rule_v2" "nfs_icmp" {
   direction         = "ingress"
   ethertype         = "IPv4"
   protocol          = "icmp"
-  remote_ip_prefix  = data.openstack_networking_subnet_v2.private.cidr
+  remote_ip_prefix  = openstack_networking_subnet_v2.private.cidr
 }

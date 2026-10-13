@@ -1,5 +1,5 @@
 locals {
-  client_cidr = data.openstack_networking_subnet_v2.private.cidr
+  client_cidr = openstack_networking_subnet_v2.private.cidr
 
   db_client_host = "${join(".", slice(split(".", cidrhost(local.client_cidr, 0)), 0, 3))}.%"
 
@@ -35,6 +35,8 @@ resource "openstack_compute_instance_v2" "db" {
     port = openstack_networking_port_v2.db.id
   }
 
+  depends_on = [openstack_networking_router_interface_v2.private]
+
   user_data = templatefile("${path.module}/cloudinit/db.yaml.tftpl", {
     db_name     = var.db_name
     db_user     = var.db_user
@@ -55,6 +57,8 @@ resource "openstack_compute_instance_v2" "nfs" {
   network {
     port = openstack_networking_port_v2.nfs.id
   }
+
+  depends_on = [openstack_networking_router_interface_v2.private]
 
   user_data = templatefile("${path.module}/cloudinit/nfs.yaml.tftpl", {
     nfs_export  = var.nfs_export
