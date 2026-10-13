@@ -7,8 +7,14 @@ Internet -> Floating IP -> HAProxy -> web-1 / web-2 -> bdd (MariaDB)
                                                     -> nfs (wp-content/uploads)
 ```
 
+![Network topology](docs/network-topology.png)
+
+The Horizon view of the applied stack: `provider-net` on the left, the tenant
+network `lemien` on the right, joined by the router `lemienroux` which holds
+the subnet gateway at `192.168.10.1`.
+
 Only the load balancer holds a floating IP. The other four instances sit on
-the tenant network and reach the internet outbound through the existing
+the tenant network and reach the internet outbound through the
 router. SSH to them goes through the balancer, which doubles as a bastion.
 
 ## Prerequisites
