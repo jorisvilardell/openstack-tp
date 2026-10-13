@@ -7,7 +7,10 @@ data "openstack_compute_flavor_v2" "default" {
   name = var.flavor_name
 }
 
-data "openstack_networking_network_v2" "external" {
-  name     = var.external_network_name
-  external = true
+data "terraform_remote_state" "infra" {
+  backend = "local"
+
+  config = {
+    path = "${path.module}/../10-infra/terraform.tfstate"
+  }
 }
