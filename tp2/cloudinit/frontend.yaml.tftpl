@@ -63,7 +63,7 @@ write_files:
               AllowOverride All
               Require all granted
           </Directory>
-          LogFormat "%{X-Forwarded-For}i %l %u %t \"%r\" %>s %O" proxied
+          LogFormat "%%{X-Forwarded-For}i %l %u %t \"%r\" %>s %O" proxied
           CustomLog $${APACHE_LOG_DIR}/access.log proxied
           ErrorLog $${APACHE_LOG_DIR}/error.log
       </VirtualHost>
