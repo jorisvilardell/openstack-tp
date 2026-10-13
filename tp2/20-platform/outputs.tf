@@ -1,9 +1,9 @@
 output "site_url" {
-  value = "http://${openstack_networking_floatingip_v2.lb.address}"
+  value = "http://${local.floating_ip}"
 }
 
 output "floating_ip" {
-  value = openstack_networking_floatingip_v2.lb.address
+  value = local.floating_ip
 }
 
 output "private_addresses" {
@@ -18,7 +18,7 @@ output "private_addresses" {
 output "ssh_config" {
   value = <<-EOT
     Host lb
-        HostName ${openstack_networking_floatingip_v2.lb.address}
+        HostName ${local.floating_ip}
         User debian
         IdentityFile ~/.ssh/openstack1-mapaire.pem
 

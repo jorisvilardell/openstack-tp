@@ -1,11 +1,19 @@
+locals {
+  network_id         = data.terraform_remote_state.infra.outputs.network_id
+  subnet_id          = data.terraform_remote_state.infra.outputs.subnet_id
+  subnet_cidr        = data.terraform_remote_state.infra.outputs.subnet_cidr
+  security_group_ids = data.terraform_remote_state.infra.outputs.security_group_ids
+  floating_ip        = data.terraform_remote_state.infra.outputs.floating_ip_address
+}
+
 resource "openstack_networking_port_v2" "lb" {
   name               = "port-lb"
-  network_id         = openstack_networking_network_v2.private.id
+  network_id         = local.network_id
   admin_state_up     = true
-  security_group_ids = [openstack_networking_secgroup_v2.lb.id]
+  security_group_ids = [local.security_group_ids["lb"]]
 
   fixed_ip {
-    subnet_id  = openstack_networking_subnet_v2.private.id
+    subnet_id  = local.subnet_id
     ip_address = var.lb_ip
   }
 }
@@ -14,46 +22,41 @@ resource "openstack_networking_port_v2" "frontend" {
   count = var.frontend_count
 
   name               = "port-frontend-${count.index + 1}"
-  network_id         = openstack_networking_network_v2.private.id
+  network_id         = local.network_id
   admin_state_up     = true
-  security_group_ids = [openstack_networking_secgroup_v2.frontend.id]
+  security_group_ids = [local.security_group_ids["frontend"]]
 
   fixed_ip {
-    subnet_id  = openstack_networking_subnet_v2.private.id
+    subnet_id  = local.subnet_id
     ip_address = var.frontend_ips[count.index]
   }
 }
 
 resource "openstack_networking_port_v2" "db" {
   name               = "port-db"
-  network_id         = openstack_networking_network_v2.private.id
+  network_id         = local.network_id
   admin_state_up     = true
-  security_group_ids = [openstack_networking_secgroup_v2.db.id]
+  security_group_ids = [local.security_group_ids["db"]]
 
   fixed_ip {
-    subnet_id  = openstack_networking_subnet_v2.private.id
+    subnet_id  = local.subnet_id
     ip_address = var.db_ip
   }
 }
 
 resource "openstack_networking_port_v2" "nfs" {
   name               = "port-nfs"
-  network_id         = openstack_networking_network_v2.private.id
+  network_id         = local.network_id
   admin_state_up     = true
-  security_group_ids = [openstack_networking_secgroup_v2.nfs.id]
+  security_group_ids = [local.security_group_ids["nfs"]]
 
   fixed_ip {
-    subnet_id  = openstack_networking_subnet_v2.private.id
+    subnet_id  = local.subnet_id
     ip_address = var.nfs_ip
   }
 }
 
-resource "openstack_networking_floatingip_v2" "lb" {
-  pool        = var.external_network_name
-  description = "Public entry point of the lemien stack"
-}
-
 resource "openstack_networking_floatingip_associate_v2" "lb" {
-  floating_ip = openstack_networking_floatingip_v2.lb.address
+  floating_ip = local.floating_ip
   port_id     = openstack_networking_port_v2.lb.id
 }
