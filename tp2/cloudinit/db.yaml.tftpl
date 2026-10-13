@@ -6,8 +6,6 @@ packages:
   - mariadb-server
 
 write_files:
-  # MariaDB listens on the tenant network instead of loopback so the two
-  # frontends can reach it. The security group is what limits who connects.
   - path: /etc/mysql/mariadb.conf.d/60-listen.cnf
     content: |
       [mysqld]

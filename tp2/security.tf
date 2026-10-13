@@ -1,6 +1,3 @@
-# ---------------------------------------------------------------------------
-# Load balancer: the only instance reachable from the outside world.
-# ---------------------------------------------------------------------------
 resource "openstack_networking_secgroup_v2" "lb" {
   name        = "sg-lb"
   description = "Public entry point: HTTP/HTTPS from anywhere, SSH from admins"
@@ -44,9 +41,6 @@ resource "openstack_networking_secgroup_rule_v2" "lb_icmp" {
   remote_ip_prefix  = var.ssh_source_cidr
 }
 
-# ---------------------------------------------------------------------------
-# Frontends: HTTP from the load balancer only, SSH through the load balancer.
-# ---------------------------------------------------------------------------
 resource "openstack_networking_secgroup_v2" "frontend" {
   name        = "sg-frontend"
   description = "Web tier: HTTP from the load balancer, SSH from the bastion"
@@ -80,9 +74,6 @@ resource "openstack_networking_secgroup_rule_v2" "frontend_icmp" {
   remote_ip_prefix  = data.openstack_networking_subnet_v2.private.cidr
 }
 
-# ---------------------------------------------------------------------------
-# Database: MariaDB reachable from the frontends only.
-# ---------------------------------------------------------------------------
 resource "openstack_networking_secgroup_v2" "db" {
   name        = "sg-db"
   description = "Database tier: MySQL from the frontends, SSH from the bastion"
@@ -116,9 +107,6 @@ resource "openstack_networking_secgroup_rule_v2" "db_icmp" {
   remote_ip_prefix  = data.openstack_networking_subnet_v2.private.cidr
 }
 
-# ---------------------------------------------------------------------------
-# NFS: portmapper and nfsd, TCP and UDP, from the frontends only.
-# ---------------------------------------------------------------------------
 resource "openstack_networking_secgroup_v2" "nfs" {
   name        = "sg-nfs"
   description = "Storage tier: NFS from the frontends, SSH from the bastion"

@@ -1,6 +1,3 @@
-# Ports are declared explicitly so each instance keeps a predictable address
-# across rebuilds, and so security groups attach to the port rather than to
-# the server.
 resource "openstack_networking_port_v2" "lb" {
   name               = "port-lb"
   network_id         = data.openstack_networking_network_v2.private.id
@@ -51,8 +48,6 @@ resource "openstack_networking_port_v2" "nfs" {
   }
 }
 
-# The single public address of the stack. Every other instance reaches the
-# internet through the existing router doing source NAT.
 resource "openstack_networking_floatingip_v2" "lb" {
   pool        = var.external_network_name
   description = "Public entry point of the lemien stack"

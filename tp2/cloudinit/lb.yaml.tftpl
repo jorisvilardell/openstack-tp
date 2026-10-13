@@ -20,8 +20,6 @@ write_files:
           mode    http
           option  httplog
           option  dontlognull
-          # A WordPress upload or a slow admin page can exceed the default
-          # 50s server timeout, hence the wider server and client windows.
           timeout connect 5s
           timeout client  60s
           timeout server  60s
@@ -29,16 +27,12 @@ write_files:
 
       frontend wordpress_in
           bind *:80
-          # Preserve the visitor address for WordPress and for the logs.
           option forwardfor
           http-request set-header X-Forwarded-Proto http
           default_backend wordpress_pool
 
       backend wordpress_pool
           balance roundrobin
-          # WordPress keeps sessions in cookies and media on NFS, so the
-          # cookie below only improves cache locality; either node can serve
-          # any request.
           cookie SRVID insert indirect nocache
           option httpchk GET /
           http-check expect status 200,301,302

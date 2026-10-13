@@ -40,8 +40,6 @@ variable "frontend_count" {
   default     = 2
 }
 
-# Fixed addresses keep the HAProxy backend list and the NFS/MariaDB client
-# configuration renderable at plan time, before any instance exists.
 variable "lb_ip" {
   type    = string
   default = "192.168.10.11"

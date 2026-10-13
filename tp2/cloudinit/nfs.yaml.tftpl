@@ -6,8 +6,6 @@ packages:
   - nfs-kernel-server
 
 write_files:
-  # Squashing every client to www-data keeps file ownership consistent across
-  # both frontends, which is what WordPress needs to write uploads.
   - path: /etc/exports
     content: |
       ${nfs_export} ${client_cidr}(rw,sync,no_subtree_check,all_squash,anonuid=33,anongid=33)

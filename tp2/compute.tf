@@ -1,17 +1,12 @@
 locals {
-  # Every tier accepts traffic from the tenant subnet only; the security
-  # groups narrow that further, tier by tier.
   client_cidr = data.openstack_networking_subnet_v2.private.cidr
 
-  # MariaDB grants take a host pattern, not CIDR notation. The tenant network
-  # is a /24, so the first three octets plus a wildcard cover it exactly.
   db_client_host = "${join(".", slice(split(".", cidrhost(local.client_cidr, 0)), 0, 3))}.%"
 
   salts = { for name in local.wordpress_salt_names :
     "salt_${name}" => random_password.wordpress_salt[name].result
   }
 
-  # Rendered into haproxy.cfg as the backend server list.
   haproxy_backends = join("\n", [
     for index, address in slice(var.frontend_ips, 0, var.frontend_count) :
     "          server web${index + 1} ${address}:80 check cookie web${index + 1}"
@@ -67,9 +62,6 @@ resource "openstack_compute_instance_v2" "nfs" {
   })
 }
 
-# Frontends are created after the tiers they depend on. Their boot script
-# still waits on the NFS port, because creation order does not guarantee the
-# service inside the instance is ready.
 resource "openstack_compute_instance_v2" "frontend" {
   count = var.frontend_count
 

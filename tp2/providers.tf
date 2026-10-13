@@ -14,6 +14,4 @@ terraform {
   }
 }
 
-# Credentials are read from the environment (source your -openrc.sh file
-# before running terraform). No secrets are stored in this repository.
 provider "openstack" {}

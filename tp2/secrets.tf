@@ -1,4 +1,3 @@
-# Generated once and kept in the Terraform state, never in the repository.
 resource "random_password" "db" {
   length  = 24
   special = false
@@ -17,9 +16,6 @@ locals {
   ]
 }
 
-# One salt per WordPress constant, shared by both frontends. The excluded
-# characters are those that would terminate or escape the single-quoted PHP
-# string the salt is written into.
 resource "random_password" "wordpress_salt" {
   for_each = toset(local.wordpress_salt_names)
 
