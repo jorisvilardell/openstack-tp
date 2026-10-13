@@ -9,3 +9,7 @@ crash.log
 *.auto.tfvars
 terraform.tfvars
 *.pem
+
+# OpenStack credentials sourced into the shell, never committed.
+*-openrc.sh
+*openrc*
