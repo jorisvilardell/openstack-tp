@@ -1,0 +1,103 @@
+#cloud-config
+package_update: true
+package_upgrade: false
+
+packages:
+  - apache2
+  - php
+  - php-mysql
+  - php-gd
+  - php-xml
+  - php-mbstring
+  - php-curl
+  - php-zip
+  - php-intl
+  - nfs-common
+  - mariadb-client
+  - curl
+
+write_files:
+  - path: /var/www/wp-config-template.php
+    permissions: '0640'
+    content: |
+      <?php
+      define( 'DB_NAME', '${db_name}' );
+      define( 'DB_USER', '${db_user}' );
+      define( 'DB_PASSWORD', '${db_password}' );
+      define( 'DB_HOST', '${db_ip}' );
+      define( 'DB_CHARSET', 'utf8mb4' );
+      define( 'DB_COLLATE', '' );
+
+      // Both frontends must share the same salts, otherwise a session cookie
+      // issued by one node is rejected when the balancer routes the next
+      // request to the other.
+      define( 'AUTH_KEY',         '${salt_auth_key}' );
+      define( 'SECURE_AUTH_KEY',  '${salt_secure_auth_key}' );
+      define( 'LOGGED_IN_KEY',    '${salt_logged_in_key}' );
+      define( 'NONCE_KEY',        '${salt_nonce_key}' );
+      define( 'AUTH_SALT',        '${salt_auth_salt}' );
+      define( 'SECURE_AUTH_SALT', '${salt_secure_auth_salt}' );
+      define( 'LOGGED_IN_SALT',   '${salt_logged_in_salt}' );
+      define( 'NONCE_SALT',       '${salt_nonce_salt}' );
+
+      $table_prefix = 'wp_';
+
+      // WordPress sees the balancer address, not its own, so the site URL is
+      // pinned to the floating IP and the client address is recovered from
+      // the header HAProxy sets.
+      define( 'WP_HOME',    'http://${public_address}' );
+      define( 'WP_SITEURL', 'http://${public_address}' );
+
+      if ( isset( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+          $forwarded = explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] );
+          $_SERVER['REMOTE_ADDR'] = trim( $forwarded[0] );
+      }
+
+      define( 'WP_DEBUG', false );
+
+      if ( ! defined( 'ABSPATH' ) ) {
+          define( 'ABSPATH', __DIR__ . '/' );
+      }
+      require_once ABSPATH . 'wp-settings.php';
+
+  - path: /etc/apache2/sites-available/wordpress.conf
+    content: |
+      <VirtualHost *:80>
+          DocumentRoot /var/www/html
+          <Directory /var/www/html>
+              AllowOverride All
+              Require all granted
+          </Directory>
+          # Log the real visitor address forwarded by HAProxy.
+          LogFormat "%{X-Forwarded-For}i %l %u %t \"%r\" %>s %O" proxied
+          CustomLog $${APACHE_LOG_DIR}/access.log proxied
+          ErrorLog $${APACHE_LOG_DIR}/error.log
+      </VirtualHost>
+
+mounts:
+  - [ "${nfs_ip}:${nfs_export}", "/var/www/html/wp-content/uploads", "nfs4",
+      "rw,_netdev,soft,timeo=30,retrans=3", "0", "0" ]
+
+runcmd:
+  # The NFS and database instances boot in parallel with this one, so wait
+  # for each service rather than assuming it is already listening.
+  - |
+    for i in $(seq 1 60); do
+      nc -z ${nfs_ip} 2049 && break
+      sleep 5
+    done
+  - curl -fsSL https://wordpress.org/latest.tar.gz -o /tmp/wordpress.tar.gz
+  - tar -xzf /tmp/wordpress.tar.gz -C /tmp
+  - cp -rT /tmp/wordpress /var/www/html
+  - rm -rf /tmp/wordpress /tmp/wordpress.tar.gz /var/www/html/index.html
+  - cp /var/www/wp-config-template.php /var/www/html/wp-config.php
+  - mkdir -p /var/www/html/wp-content/uploads
+  - chown -R www-data:www-data /var/www/html
+  - chmod 0640 /var/www/html/wp-config.php
+  # Mount only after the directory exists and WordPress is unpacked, so the
+  # export is never hidden behind a half-installed tree.
+  - mount -a
+  - a2enmod rewrite
+  - a2dissite 000-default
+  - a2ensite wordpress
+  - systemctl restart apache2
