@@ -86,18 +86,6 @@ cd 20-platform && terraform destroy
 cd ../10-infra && terraform destroy
 ```
 
-## Ansible
-
-Configuration currently lives in cloud-init, which runs once at first boot:
-changing `haproxy.cfg` means rebuilding the instance. `20-platform` writes
-`ansible/inventory.ini` on every apply, with the tiers grouped and the load
-balancer set as jump host for the private ones, ready for playbooks to take
-that role over.
-
-```bash
-ansible -i ansible/inventory.ini all -m ping
-```
-
 WordPress serves its installation wizard on first visit. The database, the
 user and the shared upload mount are already in place.
 
