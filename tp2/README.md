@@ -1,4 +1,4 @@
-# TP2 — WordPress load-balanced on OpenStack
+# TP2 - WordPress load-balanced on OpenStack
 
 Terraform configuration for a five-instance WordPress stack:
 
