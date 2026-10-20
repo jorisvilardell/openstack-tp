@@ -1,0 +1,104 @@
+---
+- name: Provision the OpenStack resources
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Create the tenant network
+      openstack.cloud.network:
+        name: "{{ private_network }}"
+        state: present
+        external: false
+
+    - name: Create the tenant subnet
+      openstack.cloud.subnet:
+        name: "{{ subnet_name }}"
+        network_name: "{{ private_network }}"
+        state: present
+        cidr: "{{ subnet_cidr }}"
+        gateway_ip: "{{ subnet_gateway }}"
+        dns_nameservers: "{{ dns_nameservers }}"
+        allocation_pool_start: "{{ allocation_pool_start }}"
+        allocation_pool_end: "{{ allocation_pool_end }}"
+
+    - name: Create the router and attach it to both networks
+      openstack.cloud.router:
+        name: "{{ router_name }}"
+        state: present
+        network: "{{ external_network }}"
+        interfaces:
+          - "{{ subnet_name }}"
+
+    - name: Create the security groups
+      openstack.cloud.security_group:
+        name: "{{ item.name }}"
+        description: "{{ item.description }}"
+        state: present
+      loop: "{{ security_groups }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Add the security group rules
+      openstack.cloud.security_group_rule:
+        security_group: "{{ item.0.name }}"
+        state: present
+        protocol: "{{ item.1.protocol }}"
+        port_range_min: "{{ item.1.port | default(omit) }}"
+        port_range_max: "{{ item.1.port | default(omit) }}"
+        remote_ip_prefix: "{{ item.1.remote_ip_prefix | default(omit) }}"
+        remote_group: "{{ item.1.remote_group | default(omit) }}"
+      loop: "{{ security_groups | subelements('rules') }}"
+      loop_control:
+        label: "{{ item.0.name }} {{ item.1.protocol }} {{ item.1.port | default('any') }}"
+
+    - name: Create the instances
+      openstack.cloud.server:
+        name: "{{ item.name }}"
+        state: present
+        image: "{{ image_name }}"
+        flavor: "{{ flavor_name }}"
+        key_name: "{{ keypair_name }}"
+        security_groups:
+          - "{{ item.security_group }}"
+        nics:
+          - net-name: "{{ private_network }}"
+            v4-fixed-ip: "{{ item.ip }}"
+        auto_ip: false
+        wait: true
+        timeout: 300
+      loop: "{{ instances }}"
+      loop_control:
+        label: "{{ item.name }} {{ item.ip }}"
+
+    - name: Attach a floating IP to the load balancer
+      openstack.cloud.floating_ip:
+        server: lb
+        network: "{{ external_network }}"
+        reuse: true
+        wait: true
+        timeout: 180
+        state: present
+      register: lb_floating_ip
+
+    - name: Record the public address
+      ansible.builtin.set_fact:
+        public_address: "{{ lb_floating_ip.floating_ip.floating_ip_address }}"
+
+    - name: Write the inventory
+      ansible.builtin.template:
+        src: templates/hosts.ini.j2
+        dest: "{{ playbook_dir }}/inventory/hosts.ini"
+        mode: "0644"
+
+    - name: Wait for the load balancer to accept SSH
+      ansible.builtin.wait_for:
+        host: "{{ public_address }}"
+        port: 22
+        state: started
+        timeout: 300
+        delay: 5
+
+    - name: Report the entry point
+      ansible.builtin.debug:
+        msg: "Stack reachable at http://{{ public_address }} once site.yml has run"

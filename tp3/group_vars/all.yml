@@ -55,3 +55,64 @@ wordpress_salts:
   SECURE_AUTH_SALT: "{{ lookup('password', playbook_dir + '/.secrets/secure_auth_salt chars=ascii_letters,digits length=64') }}"
   LOGGED_IN_SALT: "{{ lookup('password', playbook_dir + '/.secrets/logged_in_salt chars=ascii_letters,digits length=64') }}"
   NONCE_SALT: "{{ lookup('password', playbook_dir + '/.secrets/nonce_salt chars=ascii_letters,digits length=64') }}"
+
+security_groups:
+  - name: sg-lb
+    description: Public entry point, HTTP and HTTPS from anywhere, SSH from admins
+    rules:
+      - protocol: tcp
+        port: 80
+        remote_ip_prefix: 0.0.0.0/0
+      - protocol: tcp
+        port: 443
+        remote_ip_prefix: 0.0.0.0/0
+      - protocol: tcp
+        port: 22
+        remote_ip_prefix: "{{ ssh_source_cidr }}"
+      - protocol: icmp
+        remote_ip_prefix: "{{ ssh_source_cidr }}"
+
+  - name: sg-frontend
+    description: Web tier, HTTP from the load balancer, SSH from the bastion
+    rules:
+      - protocol: tcp
+        port: 80
+        remote_group: sg-lb
+      - protocol: tcp
+        port: 22
+        remote_group: sg-lb
+      - protocol: icmp
+        remote_ip_prefix: "{{ subnet_cidr }}"
+
+  - name: sg-db
+    description: Database tier, MySQL from the frontends, SSH from the bastion
+    rules:
+      - protocol: tcp
+        port: 3306
+        remote_group: sg-frontend
+      - protocol: tcp
+        port: 22
+        remote_group: sg-lb
+      - protocol: icmp
+        remote_ip_prefix: "{{ subnet_cidr }}"
+
+  - name: sg-nfs
+    description: Storage tier, NFS from the frontends, SSH from the bastion
+    rules:
+      - protocol: tcp
+        port: 111
+        remote_group: sg-frontend
+      - protocol: udp
+        port: 111
+        remote_group: sg-frontend
+      - protocol: tcp
+        port: 2049
+        remote_group: sg-frontend
+      - protocol: udp
+        port: 2049
+        remote_group: sg-frontend
+      - protocol: tcp
+        port: 22
+        remote_group: sg-lb
+      - protocol: icmp
+        remote_ip_prefix: "{{ subnet_cidr }}"

@@ -1,0 +1,30 @@
+[loadbalancer]
+lb ansible_host={{ public_address }}
+
+[web]
+{% for host in instances | selectattr('group', 'equalto', 'web') %}
+{{ host.name }} ansible_host={{ host.ip }}
+{% endfor %}
+
+[database]
+{% for host in instances | selectattr('group', 'equalto', 'database') %}
+{{ host.name }} ansible_host={{ host.ip }}
+{% endfor %}
+
+[nfs]
+{% for host in instances | selectattr('group', 'equalto', 'nfs') %}
+{{ host.name }} ansible_host={{ host.ip }}
+{% endfor %}
+
+[private:children]
+web
+database
+nfs
+
+[all:vars]
+ansible_user={{ ssh_user }}
+ansible_ssh_private_key_file={{ ssh_private_key }}
+public_address={{ public_address }}
+
+[private:vars]
+ansible_ssh_common_args=-o ProxyJump={{ ssh_user }}@{{ public_address }} -o StrictHostKeyChecking=accept-new
