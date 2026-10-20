@@ -4,7 +4,6 @@
     name: nfs-kernel-server
     state: present
     update_cache: true
-    cache_valid_time: 3600
 
 - name: Create the exported directory
   ansible.builtin.file:

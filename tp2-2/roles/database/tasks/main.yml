@@ -6,7 +6,6 @@
       - python3-pymysql
     state: present
     update_cache: true
-    cache_valid_time: 3600
 
 - name: Listen on the tenant address instead of loopback
   ansible.builtin.template:

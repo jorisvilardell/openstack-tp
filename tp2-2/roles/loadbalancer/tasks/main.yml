@@ -4,7 +4,6 @@
     name: haproxy
     state: present
     update_cache: true
-    cache_valid_time: 3600
 
 - name: Write the HAProxy configuration
   ansible.builtin.template:

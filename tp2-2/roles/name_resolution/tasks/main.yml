@@ -20,3 +20,7 @@
   loop: "{{ resolved_hosts.results }}"
   loop_control:
     label: "{{ item.item }}"
+
+- name: Refresh the package list now that the mirrors resolve
+  ansible.builtin.apt:
+    update_cache: true

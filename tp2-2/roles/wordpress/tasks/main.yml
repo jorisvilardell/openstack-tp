@@ -15,7 +15,6 @@
       - mariadb-client
     state: present
     update_cache: true
-    cache_valid_time: 3600
 
 - name: Check whether WordPress is already unpacked
   ansible.builtin.stat:
