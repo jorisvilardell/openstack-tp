@@ -77,7 +77,7 @@ client, through openstacksdk. Then open `http://<floating-ip>`, which
 Re-running `site.yml` is the normal way to apply a configuration change:
 
 ```bash
-ansible-playbook site.yml --tags never --limit loadbalancer
+ansible-playbook site.yml --limit loadbalancer
 ansible-playbook site.yml --limit web
 ```
 
