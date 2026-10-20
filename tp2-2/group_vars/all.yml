@@ -7,9 +7,7 @@ subnet_cidr: 192.168.10.0/24
 subnet_gateway: 192.168.10.1
 allocation_pool_start: 192.168.10.100
 allocation_pool_end: 192.168.10.200
-dns_nameservers:
-  - 8.8.8.8
-  - 1.1.1.1
+dns_nameservers: []
 
 image_name: debian-12
 flavor_name: m1.small

@@ -18,7 +18,7 @@
         state: present
         cidr: "{{ subnet_cidr }}"
         gateway_ip: "{{ subnet_gateway }}"
-        dns_nameservers: "{{ dns_nameservers }}"
+        dns_nameservers: "{{ dns_nameservers | default([], true) }}"
         allocation_pool_start: "{{ allocation_pool_start }}"
         allocation_pool_end: "{{ allocation_pool_end }}"
 
