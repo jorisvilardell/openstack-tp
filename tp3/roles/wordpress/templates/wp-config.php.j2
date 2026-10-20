@@ -1,0 +1,28 @@
+<?php
+define( 'DB_NAME', '{{ wordpress_db_name }}' );
+define( 'DB_USER', '{{ wordpress_db_user }}' );
+define( 'DB_PASSWORD', '{{ wordpress_db_password }}' );
+define( 'DB_HOST', '{{ database_ip }}' );
+define( 'DB_CHARSET', 'utf8mb4' );
+define( 'DB_COLLATE', '' );
+
+{% for name, value in wordpress_salts.items() %}
+define( '{{ name }}', '{{ value }}' );
+{% endfor %}
+
+$table_prefix = 'wp_';
+
+define( 'WP_HOME',    'http://{{ public_address }}' );
+define( 'WP_SITEURL', 'http://{{ public_address }}' );
+
+if ( isset( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+    $forwarded = explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] );
+    $_SERVER['REMOTE_ADDR'] = trim( $forwarded[0] );
+}
+
+define( 'WP_DEBUG', false );
+
+if ( ! defined( 'ABSPATH' ) ) {
+    define( 'ABSPATH', __DIR__ . '/' );
+}
+require_once ABSPATH . 'wp-settings.php';

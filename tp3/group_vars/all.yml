@@ -42,6 +42,8 @@ instances:
     security_group: sg-nfs
 
 nfs_export: /srv/share
+database_ip: "{{ instances | selectattr('group', 'equalto', 'database') | map(attribute='ip') | first }}"
+nfs_server_ip: "{{ instances | selectattr('group', 'equalto', 'nfs') | map(attribute='ip') | first }}"
 
 mysql_client_pattern: "{{ subnet_cidr.split('.')[0:3] | join('.') }}.%"
 wordpress_db_name: appdb

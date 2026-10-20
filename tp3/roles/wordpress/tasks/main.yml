@@ -1,0 +1,103 @@
+---
+- name: Install Apache, PHP and the NFS client
+  ansible.builtin.apt:
+    name:
+      - apache2
+      - php
+      - php-mysql
+      - php-gd
+      - php-xml
+      - php-mbstring
+      - php-curl
+      - php-zip
+      - php-intl
+      - nfs-common
+      - mariadb-client
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check whether WordPress is already unpacked
+  ansible.builtin.stat:
+    path: /var/www/html/wp-settings.php
+  register: wordpress_installed
+
+- name: Download WordPress
+  ansible.builtin.get_url:
+    url: https://wordpress.org/latest.tar.gz
+    dest: /tmp/wordpress.tar.gz
+    mode: "0644"
+  when: not wordpress_installed.stat.exists
+
+- name: Unpack WordPress into the document root
+  ansible.builtin.unarchive:
+    src: /tmp/wordpress.tar.gz
+    dest: /var/www/html
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+    owner: www-data
+    group: www-data
+  when: not wordpress_installed.stat.exists
+
+- name: Remove the Debian placeholder page
+  ansible.builtin.file:
+    path: /var/www/html/index.html
+    state: absent
+
+- name: Write wp-config.php
+  ansible.builtin.template:
+    src: wp-config.php.j2
+    dest: /var/www/html/wp-config.php
+    owner: www-data
+    group: www-data
+    mode: "0640"
+
+- name: Create the uploads mount point
+  ansible.builtin.file:
+    path: /var/www/html/wp-content/uploads
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0775"
+
+- name: Mount the shared uploads directory
+  ansible.posix.mount:
+    path: /var/www/html/wp-content/uploads
+    src: "{{ nfs_server_ip }}:{{ nfs_export }}"
+    fstype: nfs4
+    opts: rw,_netdev,soft,timeo=30,retrans=3
+    state: mounted
+
+- name: Install the virtual host
+  ansible.builtin.template:
+    src: wordpress.conf.j2
+    dest: /etc/apache2/sites-available/wordpress.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart apache
+
+- name: Enable the rewrite module
+  community.general.apache2_module:
+    name: rewrite
+    state: present
+  notify: Restart apache
+
+- name: Disable the default site
+  ansible.builtin.command: a2dissite 000-default
+  register: disable_default
+  changed_when: "'already disabled' not in disable_default.stdout"
+  notify: Restart apache
+
+- name: Enable the WordPress site
+  ansible.builtin.command: a2ensite wordpress
+  register: enable_wordpress
+  changed_when: "'already enabled' not in enable_wordpress.stdout"
+  notify: Restart apache
+
+- name: Start Apache
+  ansible.builtin.service:
+    name: apache2
+    state: started
+    enabled: true
