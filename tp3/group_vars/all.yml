@@ -1,0 +1,57 @@
+---
+external_network: provider-net
+private_network: lemien
+router_name: lemienroux
+subnet_name: lemien-subnet
+subnet_cidr: 192.168.10.0/24
+subnet_gateway: 192.168.10.1
+allocation_pool_start: 192.168.10.100
+allocation_pool_end: 192.168.10.200
+dns_nameservers:
+  - 8.8.8.8
+  - 1.1.1.1
+
+image_name: debian-12
+flavor_name: m1.small
+keypair_name: mapaire
+ssh_user: debian
+ssh_private_key: ~/.ssh/openstack1-mapaire.pem
+
+ssh_source_cidr: 0.0.0.0/0
+
+instances:
+  - name: lb
+    ip: 192.168.10.11
+    group: loadbalancer
+    security_group: sg-lb
+  - name: web-1
+    ip: 192.168.10.21
+    group: web
+    security_group: sg-frontend
+  - name: web-2
+    ip: 192.168.10.22
+    group: web
+    security_group: sg-frontend
+  - name: bdd
+    ip: 192.168.10.31
+    group: database
+    security_group: sg-db
+  - name: nfs
+    ip: 192.168.10.41
+    group: nfs
+    security_group: sg-nfs
+
+nfs_export: /srv/share
+
+wordpress_db_name: appdb
+wordpress_db_user: appuser
+wordpress_db_password: "{{ lookup('password', playbook_dir + '/.secrets/db_password chars=ascii_letters,digits length=24') }}"
+wordpress_salts:
+  AUTH_KEY: "{{ lookup('password', playbook_dir + '/.secrets/auth_key chars=ascii_letters,digits length=64') }}"
+  SECURE_AUTH_KEY: "{{ lookup('password', playbook_dir + '/.secrets/secure_auth_key chars=ascii_letters,digits length=64') }}"
+  LOGGED_IN_KEY: "{{ lookup('password', playbook_dir + '/.secrets/logged_in_key chars=ascii_letters,digits length=64') }}"
+  NONCE_KEY: "{{ lookup('password', playbook_dir + '/.secrets/nonce_key chars=ascii_letters,digits length=64') }}"
+  AUTH_SALT: "{{ lookup('password', playbook_dir + '/.secrets/auth_salt chars=ascii_letters,digits length=64') }}"
+  SECURE_AUTH_SALT: "{{ lookup('password', playbook_dir + '/.secrets/secure_auth_salt chars=ascii_letters,digits length=64') }}"
+  LOGGED_IN_SALT: "{{ lookup('password', playbook_dir + '/.secrets/logged_in_salt chars=ascii_letters,digits length=64') }}"
+  NONCE_SALT: "{{ lookup('password', playbook_dir + '/.secrets/nonce_salt chars=ascii_letters,digits length=64') }}"
