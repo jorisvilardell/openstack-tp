@@ -1,0 +1,30 @@
+---
+- name: Install the NFS server
+  ansible.builtin.apt:
+    name: nfs-kernel-server
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the exported directory
+  ansible.builtin.file:
+    path: "{{ nfs_export }}"
+    state: directory
+    owner: "33"
+    group: "33"
+    mode: "0775"
+
+- name: Declare the export
+  ansible.builtin.template:
+    src: exports.j2
+    dest: /etc/exports
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload exports
+
+- name: Start the NFS server
+  ansible.builtin.service:
+    name: nfs-kernel-server
+    state: started
+    enabled: true

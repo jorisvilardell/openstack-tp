@@ -43,6 +43,7 @@ instances:
 
 nfs_export: /srv/share
 
+mysql_client_pattern: "{{ subnet_cidr.split('.')[0:3] | join('.') }}.%"
 wordpress_db_name: appdb
 wordpress_db_user: appuser
 wordpress_db_password: "{{ lookup('password', playbook_dir + '/.secrets/db_password chars=ascii_letters,digits length=24') }}"

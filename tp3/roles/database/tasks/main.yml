@@ -1,0 +1,44 @@
+---
+- name: Install MariaDB and the client library Ansible needs
+  ansible.builtin.apt:
+    name:
+      - mariadb-server
+      - python3-pymysql
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Listen on the tenant address instead of loopback
+  ansible.builtin.template:
+    src: 60-listen.cnf.j2
+    dest: /etc/mysql/mariadb.conf.d/60-listen.cnf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart mariadb
+
+- name: Start MariaDB
+  ansible.builtin.service:
+    name: mariadb
+    state: started
+    enabled: true
+
+- name: Flush handlers so the service listens before the database is created
+  ansible.builtin.meta: flush_handlers
+
+- name: Create the WordPress database
+  community.mysql.mysql_db:
+    name: "{{ wordpress_db_name }}"
+    encoding: utf8mb4
+    collation: utf8mb4_unicode_ci
+    state: present
+    login_unix_socket: /run/mysqld/mysqld.sock
+
+- name: Create the WordPress user
+  community.mysql.mysql_user:
+    name: "{{ wordpress_db_user }}"
+    password: "{{ wordpress_db_password }}"
+    host: "{{ mysql_client_pattern }}"
+    priv: "{{ wordpress_db_name }}.*:ALL"
+    state: present
+    login_unix_socket: /run/mysqld/mysqld.sock
