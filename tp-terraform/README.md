@@ -41,7 +41,7 @@ variables au moment du `plan`. La topologie n'est décrite qu'une fois.
 
 ## Prérequis
 
-Ces ressources doivent préexister dans le projet ; la configuration se contente
+Ces ressources doivent préexister dans le projet. La configuration se contente
 de les rechercher.
 
 | Ressource | Valeur par défaut | Variable |
@@ -64,8 +64,8 @@ Avant le premier `apply`, trois points méritent d'être contrôlés sur le clou
 1. **Le quota.** Cinq instances `m1.small` réclament 5 vCPU, 10 Go de mémoire
    et 100 Go de disque. `openstack limits show --absolute`.
 2. **Le nom du réseau externe.** `openstack network list --external`.
-3. **Les adresses flottantes.** Le projet n'en obtient qu'un nombre réduit ;
-   libérer celles qui ne servent plus avec
+3. **Les adresses flottantes.** Le projet n'en obtient qu'un nombre réduit,
+   donc libérer celles qui ne servent plus avec
    `openstack floating ip list --status DOWN`.
 
 ## Mise en œuvre

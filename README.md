@@ -13,7 +13,7 @@ Internet → IP flottante → HAProxy → web-1 / web-2 → bdd  (MariaDB)
 
 Deux frontends WordPress derrière un répartiteur de charge, partageant leur
 contenu par une base commune et leurs fichiers par un export NFS. Une seule
-adresse publique, attribuée au répartiteur ; les autres machines restent sur
+adresse publique, attribuée au répartiteur. Les autres machines restent sur
 le réseau privé et s'administrent par rebond SSH.
 
 ## Les deux versions
