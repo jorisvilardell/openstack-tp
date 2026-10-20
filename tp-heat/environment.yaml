@@ -1,0 +1,6 @@
+parameters:
+  external_network: provider-net
+  image: debian-12
+  flavor: m1.small
+  key_name: mapaire
+  web_count: 2

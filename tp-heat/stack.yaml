@@ -1,0 +1,462 @@
+heat_template_version: 2021-04-16
+
+description: >
+  WordPress reparti derriere un repartiteur HAProxy, avec une base MariaDB et
+  un export NFS partage par les frontends. Le reseau tenant, son routeur et le
+  cloisonnement par etage font partie de la stack.
+
+parameters:
+  external_network:
+    type: string
+    label: Reseau externe
+    description: Reseau fournissant les adresses flottantes.
+    default: provider-net
+
+  image:
+    type: string
+    default: debian-12
+    constraints:
+      - custom_constraint: glance.image
+
+  flavor:
+    type: string
+    default: m1.small
+    constraints:
+      - custom_constraint: nova.flavor
+
+  key_name:
+    type: string
+    default: mapaire
+    constraints:
+      - custom_constraint: nova.keypair
+
+  web_count:
+    type: number
+    label: Nombre de frontends
+    default: 2
+    constraints:
+      - range: { min: 1, max: 5 }
+
+  subnet_cidr:
+    type: string
+    default: 192.168.20.0/24
+
+  allocation_start:
+    type: string
+    default: 192.168.20.50
+
+  allocation_end:
+    type: string
+    default: 192.168.20.200
+
+  ssh_source:
+    type: string
+    label: Plage autorisee en SSH sur le repartiteur
+    default: 0.0.0.0/0
+
+  nfs_export:
+    type: string
+    default: /srv/share
+
+  db_name:
+    type: string
+    default: appdb
+
+  db_user:
+    type: string
+    default: appuser
+
+  extra_hosts:
+    type: comma_delimited_list
+    label: Correspondances figees dans /etc/hosts
+    description: >
+      Ce cloud ne fournit aucun resolveur joignable depuis le reseau tenant.
+      Les noms necessaires a l'installation sont donc resolus en amont et
+      figes sur chaque instance.
+    default:
+      - 151.101.122.132 deb.debian.org
+      - 151.101.194.132 security.debian.org
+      - 66.6.42.252 wordpress.org
+      - 66.6.42.250 downloads.wordpress.org
+
+resources:
+
+  private_net:
+    type: OS::Neutron::Net
+    properties:
+      name: { list_join: ['-', [{ get_param: 'OS::stack_name' }, 'net']] }
+
+  private_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name: { list_join: ['-', [{ get_param: 'OS::stack_name' }, 'subnet']] }
+      network: { get_resource: private_net }
+      cidr: { get_param: subnet_cidr }
+      ip_version: 4
+      enable_dhcp: true
+      allocation_pools:
+        - start: { get_param: allocation_start }
+          end: { get_param: allocation_end }
+
+  router:
+    type: OS::Neutron::Router
+    properties:
+      name: { list_join: ['-', [{ get_param: 'OS::stack_name' }, 'router']] }
+      external_gateway_info:
+        network: { get_param: external_network }
+
+  router_interface:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router: { get_resource: router }
+      subnet: { get_resource: private_subnet }
+
+  sg_lb:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Point d'entree public, HTTP et HTTPS ouverts a tous
+      rules:
+        - protocol: tcp
+          port_range_min: 80
+          port_range_max: 80
+          remote_ip_prefix: 0.0.0.0/0
+        - protocol: tcp
+          port_range_min: 443
+          port_range_max: 443
+          remote_ip_prefix: 0.0.0.0/0
+        - protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+          remote_ip_prefix: { get_param: ssh_source }
+        - protocol: icmp
+          remote_ip_prefix: { get_param: ssh_source }
+
+  sg_web:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Etage web, joignable depuis le repartiteur uniquement
+      rules:
+        - protocol: tcp
+          port_range_min: 80
+          port_range_max: 80
+          remote_mode: remote_group_id
+          remote_group_id: { get_resource: sg_lb }
+        - protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+          remote_mode: remote_group_id
+          remote_group_id: { get_resource: sg_lb }
+        - protocol: icmp
+          remote_ip_prefix: { get_param: subnet_cidr }
+
+  sg_db:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Etage base, MySQL ouvert aux frontends
+      rules:
+        - protocol: tcp
+          port_range_min: 3306
+          port_range_max: 3306
+          remote_mode: remote_group_id
+          remote_group_id: { get_resource: sg_web }
+        - protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+          remote_mode: remote_group_id
+          remote_group_id: { get_resource: sg_lb }
+        - protocol: icmp
+          remote_ip_prefix: { get_param: subnet_cidr }
+
+  sg_nfs:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Etage stockage, NFS ouvert aux frontends
+      rules:
+        - protocol: tcp
+          port_range_min: 111
+          port_range_max: 111
+          remote_mode: remote_group_id
+          remote_group_id: { get_resource: sg_web }
+        - protocol: udp
+          port_range_min: 111
+          port_range_max: 111
+          remote_mode: remote_group_id
+          remote_group_id: { get_resource: sg_web }
+        - protocol: tcp
+          port_range_min: 2049
+          port_range_max: 2049
+          remote_mode: remote_group_id
+          remote_group_id: { get_resource: sg_web }
+        - protocol: udp
+          port_range_min: 2049
+          port_range_max: 2049
+          remote_mode: remote_group_id
+          remote_group_id: { get_resource: sg_web }
+        - protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+          remote_mode: remote_group_id
+          remote_group_id: { get_resource: sg_lb }
+        - protocol: icmp
+          remote_ip_prefix: { get_param: subnet_cidr }
+
+  db_password:
+    type: OS::Heat::RandomString
+    properties:
+      length: 24
+      sequence: lettersdigits
+
+  wp_salts:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: 8
+      resource_def:
+        type: OS::Heat::RandomString
+        properties:
+          length: 64
+          sequence: lettersdigits
+
+  nfs_port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: private_net }
+      security_groups: [{ get_resource: sg_nfs }]
+      fixed_ips:
+        - subnet: { get_resource: private_subnet }
+
+  nfs_server:
+    type: OS::Nova::Server
+    properties:
+      name: { list_join: ['-', [{ get_param: 'OS::stack_name' }, 'nfs']] }
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: nfs_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          params:
+            $EXTRA_HOSTS: { list_join: ["\n", { get_param: extra_hosts }] }
+            $EXPORT: { get_param: nfs_export }
+            $CIDR: { get_param: subnet_cidr }
+          template: |
+            #cloud-config
+            bootcmd:
+              - |
+                cat >> /etc/hosts <<'HOSTS'
+                $EXTRA_HOSTS
+                HOSTS
+            package_update: true
+            packages:
+              - nfs-kernel-server
+            write_files:
+              - path: /etc/exports
+                content: |
+                  $EXPORT $CIDR(rw,sync,no_subtree_check,all_squash,anonuid=33,anongid=33)
+            runcmd:
+              - mkdir -p $EXPORT
+              - chown 33:33 $EXPORT
+              - chmod 0775 $EXPORT
+              - exportfs -ra
+              - systemctl enable --now nfs-kernel-server
+
+  db_port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: private_net }
+      security_groups: [{ get_resource: sg_db }]
+      fixed_ips:
+        - subnet: { get_resource: private_subnet }
+
+  db_server:
+    type: OS::Nova::Server
+    properties:
+      name: { list_join: ['-', [{ get_param: 'OS::stack_name' }, 'bdd']] }
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: db_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          params:
+            $EXTRA_HOSTS: { list_join: ["\n", { get_param: extra_hosts }] }
+            $DB_IP: { get_attr: [db_port, fixed_ips, 0, ip_address] }
+            $DB_NAME: { get_param: db_name }
+            $DB_USER: { get_param: db_user }
+            $DB_PASSWORD: { get_attr: [db_password, value] }
+            $CLIENT_PATTERN:
+              list_join:
+                - '.'
+                - - { str_split: ['.', { get_param: subnet_cidr }, 0] }
+                  - { str_split: ['.', { get_param: subnet_cidr }, 1] }
+                  - { str_split: ['.', { get_param: subnet_cidr }, 2] }
+                  - '%'
+          template: |
+            #cloud-config
+            bootcmd:
+              - |
+                cat >> /etc/hosts <<'HOSTS'
+                $EXTRA_HOSTS
+                HOSTS
+            package_update: true
+            packages:
+              - mariadb-server
+            write_files:
+              - path: /etc/mysql/mariadb.conf.d/60-listen.cnf
+                content: |
+                  [mysqld]
+                  bind-address = $DB_IP
+                  max_connections = 150
+              - path: /root/init.sql
+                permissions: '0600'
+                content: |
+                  CREATE DATABASE IF NOT EXISTS `$DB_NAME`
+                    CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+                  CREATE USER IF NOT EXISTS '$DB_USER'@'$CLIENT_PATTERN'
+                    IDENTIFIED BY '$DB_PASSWORD';
+                  GRANT ALL PRIVILEGES ON `$DB_NAME`.* TO '$DB_USER'@'$CLIENT_PATTERN';
+                  FLUSH PRIVILEGES;
+            runcmd:
+              - systemctl enable --now mariadb
+              - mariadb < /root/init.sql
+              - rm -f /root/init.sql
+              - systemctl restart mariadb
+
+  lb_port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: private_net }
+      security_groups: [{ get_resource: sg_lb }]
+      fixed_ips:
+        - subnet: { get_resource: private_subnet }
+
+  lb_floating_ip:
+    type: OS::Neutron::FloatingIP
+    depends_on: router_interface
+    properties:
+      floating_network: { get_param: external_network }
+      port_id: { get_resource: lb_port }
+
+  web_group:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: { get_param: web_count }
+      resource_def:
+        type: web_node.yaml
+        properties:
+          name: { list_join: ['-', [{ get_param: 'OS::stack_name' }, 'web', '%index%']] }
+          image: { get_param: image }
+          flavor: { get_param: flavor }
+          key_name: { get_param: key_name }
+          network: { get_resource: private_net }
+          subnet: { get_resource: private_subnet }
+          security_group: { get_resource: sg_web }
+          db_ip: { get_attr: [db_port, fixed_ips, 0, ip_address] }
+          db_name: { get_param: db_name }
+          db_user: { get_param: db_user }
+          db_password: { get_attr: [db_password, value] }
+          nfs_ip: { get_attr: [nfs_port, fixed_ips, 0, ip_address] }
+          nfs_export: { get_param: nfs_export }
+          public_ip: { get_attr: [lb_floating_ip, floating_ip_address] }
+          extra_hosts: { get_param: extra_hosts }
+          salts:
+            - { get_attr: [wp_salts, resource.0.value] }
+            - { get_attr: [wp_salts, resource.1.value] }
+            - { get_attr: [wp_salts, resource.2.value] }
+            - { get_attr: [wp_salts, resource.3.value] }
+            - { get_attr: [wp_salts, resource.4.value] }
+            - { get_attr: [wp_salts, resource.5.value] }
+            - { get_attr: [wp_salts, resource.6.value] }
+            - { get_attr: [wp_salts, resource.7.value] }
+
+  lb_server:
+    type: OS::Nova::Server
+    properties:
+      name: { list_join: ['-', [{ get_param: 'OS::stack_name' }, 'lb']] }
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: lb_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          params:
+            $EXTRA_HOSTS: { list_join: ["\n", { get_param: extra_hosts }] }
+            $BACKENDS:
+              list_join:
+                - "\n"
+                - repeat:
+                    for_each:
+                      <%ip%>: { get_attr: [web_group, ip] }
+                    template: "    server <%ip%> <%ip%>:80 check"
+          template: |
+            #cloud-config
+            bootcmd:
+              - |
+                cat >> /etc/hosts <<'HOSTS'
+                $EXTRA_HOSTS
+                HOSTS
+            package_update: true
+            packages:
+              - haproxy
+            write_files:
+              - path: /etc/haproxy/haproxy.cfg
+                content: |
+                  global
+                      log /dev/log local0
+                      maxconn 2048
+                      user haproxy
+                      group haproxy
+                      daemon
+
+                  defaults
+                      log     global
+                      mode    http
+                      option  httplog
+                      option  dontlognull
+                      timeout connect 5s
+                      timeout client  60s
+                      timeout server  60s
+
+                  frontend wordpress_in
+                      bind *:80
+                      option forwardfor
+                      http-request set-header X-Forwarded-Proto http
+                      default_backend wordpress_pool
+
+                  backend wordpress_pool
+                      balance roundrobin
+                      option httpchk GET /
+                      http-check expect status 200,301,302
+                  $BACKENDS
+            runcmd:
+              - systemctl enable --now haproxy
+
+outputs:
+  site_url:
+    description: Adresse publique du site
+    value: { list_join: ['', ['http://', { get_attr: [lb_floating_ip, floating_ip_address] }]] }
+
+  floating_ip:
+    description: Adresse flottante portee par le repartiteur
+    value: { get_attr: [lb_floating_ip, floating_ip_address] }
+
+  web_ips:
+    description: Adresses privees des frontends
+    value: { get_attr: [web_group, ip] }
+
+  db_ip:
+    description: Adresse privee de la base
+    value: { get_attr: [db_port, fixed_ips, 0, ip_address] }
+
+  nfs_ip:
+    description: Adresse privee du serveur NFS
+    value: { get_attr: [nfs_port, fixed_ips, 0, ip_address] }
+
+  db_password:
+    description: Mot de passe genere pour l'utilisateur WordPress
+    value: { get_attr: [db_password, value] }

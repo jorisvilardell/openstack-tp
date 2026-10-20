@@ -1,0 +1,168 @@
+heat_template_version: 2021-04-16
+
+description: >
+  Un frontend WordPress. Appele par la stack principale a travers un
+  ResourceGroup, autant de fois que de frontends demandes.
+
+parameters:
+  name:
+    type: string
+  image:
+    type: string
+  flavor:
+    type: string
+  key_name:
+    type: string
+  network:
+    type: string
+  subnet:
+    type: string
+  security_group:
+    type: string
+  db_ip:
+    type: string
+  db_name:
+    type: string
+  db_user:
+    type: string
+  db_password:
+    type: string
+  nfs_ip:
+    type: string
+  nfs_export:
+    type: string
+  public_ip:
+    type: string
+  salts:
+    type: comma_delimited_list
+  extra_hosts:
+    type: comma_delimited_list
+
+resources:
+
+  port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_param: network }
+      security_groups: [{ get_param: security_group }]
+      fixed_ips:
+        - subnet: { get_param: subnet }
+
+  server:
+    type: OS::Nova::Server
+    properties:
+      name: { get_param: name }
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_param: key_name }
+      networks:
+        - port: { get_resource: port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          params:
+            $EXTRA_HOSTS: { list_join: ["\n", { get_param: extra_hosts }] }
+            $DB_IP: { get_param: db_ip }
+            $DB_NAME: { get_param: db_name }
+            $DB_USER: { get_param: db_user }
+            $DB_PASSWORD: { get_param: db_password }
+            $NFS_IP: { get_param: nfs_ip }
+            $NFS_EXPORT: { get_param: nfs_export }
+            $PUBLIC_IP: { get_param: public_ip }
+            $SALT_1: { get_param: [salts, 0] }
+            $SALT_2: { get_param: [salts, 1] }
+            $SALT_3: { get_param: [salts, 2] }
+            $SALT_4: { get_param: [salts, 3] }
+            $SALT_5: { get_param: [salts, 4] }
+            $SALT_6: { get_param: [salts, 5] }
+            $SALT_7: { get_param: [salts, 6] }
+            $SALT_8: { get_param: [salts, 7] }
+          template: |
+            #cloud-config
+            bootcmd:
+              - |
+                cat >> /etc/hosts <<'HOSTS'
+                $EXTRA_HOSTS
+                HOSTS
+            package_update: true
+            packages:
+              - apache2
+              - php
+              - php-mysql
+              - php-gd
+              - php-xml
+              - php-mbstring
+              - php-curl
+              - php-zip
+              - php-intl
+              - nfs-common
+              - mariadb-client
+              - curl
+              - netcat-openbsd
+            write_files:
+              - path: /var/www/wp-config-template.php
+                permissions: '0640'
+                content: |
+                  <?php
+                  define( 'DB_NAME', '$DB_NAME' );
+                  define( 'DB_USER', '$DB_USER' );
+                  define( 'DB_PASSWORD', '$DB_PASSWORD' );
+                  define( 'DB_HOST', '$DB_IP' );
+                  define( 'DB_CHARSET', 'utf8mb4' );
+                  define( 'DB_COLLATE', '' );
+                  define( 'AUTH_KEY',         '$SALT_1' );
+                  define( 'SECURE_AUTH_KEY',  '$SALT_2' );
+                  define( 'LOGGED_IN_KEY',    '$SALT_3' );
+                  define( 'NONCE_KEY',        '$SALT_4' );
+                  define( 'AUTH_SALT',        '$SALT_5' );
+                  define( 'SECURE_AUTH_SALT', '$SALT_6' );
+                  define( 'LOGGED_IN_SALT',   '$SALT_7' );
+                  define( 'NONCE_SALT',       '$SALT_8' );
+                  $table_prefix = 'wp_';
+                  define( 'WP_HOME',    'http://$PUBLIC_IP' );
+                  define( 'WP_SITEURL', 'http://$PUBLIC_IP' );
+                  if ( isset( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+                      $forwarded = explode( ',', $_SERVER['HTTP_X_FORWARDED_FOR'] );
+                      $_SERVER['REMOTE_ADDR'] = trim( $forwarded[0] );
+                  }
+                  define( 'WP_DEBUG', false );
+                  if ( ! defined( 'ABSPATH' ) ) {
+                      define( 'ABSPATH', __DIR__ . '/' );
+                  }
+                  require_once ABSPATH . 'wp-settings.php';
+              - path: /etc/apache2/sites-available/wordpress.conf
+                content: |
+                  <VirtualHost *:80>
+                      DocumentRoot /var/www/html
+                      <Directory /var/www/html>
+                          AllowOverride All
+                          Require all granted
+                      </Directory>
+                  </VirtualHost>
+            mounts:
+              - [ "$NFS_IP:$NFS_EXPORT", "/var/www/html/wp-content/uploads", "nfs4",
+                  "rw,_netdev,soft,timeo=30,retrans=3", "0", "0" ]
+            runcmd:
+              - |
+                for i in $(seq 1 60); do
+                  nc -z $NFS_IP 2049 && break
+                  sleep 5
+                done
+              - curl -fsSL https://wordpress.org/latest.tar.gz -o /tmp/wordpress.tar.gz
+              - tar -xzf /tmp/wordpress.tar.gz -C /tmp
+              - cp -rT /tmp/wordpress /var/www/html
+              - rm -rf /tmp/wordpress /tmp/wordpress.tar.gz /var/www/html/index.html
+              - cp /var/www/wp-config-template.php /var/www/html/wp-config.php
+              - mkdir -p /var/www/html/wp-content/uploads
+              - chown -R www-data:www-data /var/www/html
+              - chmod 0640 /var/www/html/wp-config.php
+              - mount -a
+              - a2enmod rewrite
+              - a2dissite 000-default
+              - a2ensite wordpress
+              - systemctl restart apache2
+
+outputs:
+  ip:
+    description: Adresse du frontend sur le reseau tenant
+    value: { get_attr: [port, fixed_ips, 0, ip_address] }
