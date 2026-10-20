@@ -1,0 +1,61 @@
+---
+- name: Remove the OpenStack resources
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Require an explicit confirmation
+      ansible.builtin.assert:
+        that:
+          - confirm | default('') == 'yes'
+        fail_msg: >-
+          This deletes the five instances, the floating IP, the router,
+          the subnet and the network, with their data. Re-run with
+          -e confirm=yes once you have checked what it would remove.
+
+    - name: Detach the floating IP
+      openstack.cloud.floating_ip:
+        server: lb
+        network: "{{ external_network }}"
+        state: absent
+        purge: true
+      failed_when: false
+
+    - name: Delete the instances
+      openstack.cloud.server:
+        name: "{{ item.name }}"
+        state: absent
+        wait: true
+        timeout: 300
+      loop: "{{ instances }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Detach the subnet from the router
+      openstack.cloud.router:
+        name: "{{ router_name }}"
+        state: absent
+
+    - name: Delete the subnet
+      openstack.cloud.subnet:
+        name: "{{ subnet_name }}"
+        state: absent
+
+    - name: Delete the network
+      openstack.cloud.network:
+        name: "{{ private_network }}"
+        state: absent
+
+    - name: Delete the security groups
+      openstack.cloud.security_group:
+        name: "{{ item.name }}"
+        state: absent
+      loop: "{{ security_groups }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Drop the generated inventory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/inventory/hosts.ini"
+        state: absent
