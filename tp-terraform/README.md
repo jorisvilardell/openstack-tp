@@ -1,109 +1,114 @@
-# TP2 - WordPress load-balanced on OpenStack
+# Version Terraform
 
-Terraform configuration for a five-instance WordPress stack:
+Déploiement de l'architecture WordPress répartie à l'aide de Terraform, la
+configuration des services étant confiée à cloud-init.
 
-```
-Internet -> Floating IP -> HAProxy -> web-1 / web-2 -> bdd (MariaDB)
-                                                    -> nfs (wp-content/uploads)
-```
+![Topologie réseau](docs/network-topology.png)
 
-![Network topology](docs/network-topology.png)
+Vue Horizon de la pile déployée : le réseau externe `provider-net` à gauche,
+le réseau tenant `lemien` à droite, reliés par le routeur `lemienroux` qui
+porte la passerelle `192.168.10.1`.
 
-The Horizon view of the applied stack: `provider-net` on the left, the tenant
-network `lemien` on the right, joined by the router `lemienroux` which holds
-the subnet gateway at `192.168.10.1`.
+## Organisation en deux couches
 
-Only the load balancer holds a floating IP. The other four instances sit on
-the tenant network and reach the internet outbound through the
-router. SSH to them goes through the balancer, which doubles as a bastion.
+Le code est scindé en deux racines, chacune dotée de son propre état.
 
-## Prerequisites
-
-These must already exist in the project; the configuration looks them up:
-
-| Resource | Default name | Variable |
+| Couche | Ressources | Rythme de vie |
 | --- | --- | --- |
-| External network | `provider-net` | `external_network_name` |
+| `10-infra/` | réseau, sous-réseau, routeur, groupes de sécurité, IP flottante | stable |
+| `20-platform/` | ports, instances, provisionnement cloud-init | reconstruit librement |
+
+`20-platform` lit la couche inférieure par `terraform_remote_state`, pointé sur
+`../10-infra/terraform.tfstate`. La dépendance est strictement à sens unique.
+
+Ce découpage suit la durée de vie des ressources plutôt que leur nature. Il
+permet de détruire et reconstruire les machines sans rendre l'adresse publique
+au pool partagé, ce qui compte lorsque le quota n'en accorde qu'une seule. En
+contrepartie, l'ordre d'exécution devient contraignant : on applique de bas en
+haut, on détruit dans l'ordre inverse.
+
+## Adressage
+
+Les adresses des instances sont figées dans `variables.tf` plutôt que laissées
+au DHCP : `.11` pour le répartiteur, `.21` et `.22` pour les frontends, `.31`
+pour la base, `.41` pour le serveur NFS. La plage DHCP démarre à `.100`, de
+sorte qu'aucune attribution automatique ne vienne entrer en collision avec un
+port déclaré.
+
+Ce choix n'est pas cosmétique : la liste des backends HAProxy, le droit
+d'accès MariaDB et l'export NFS sont tous rendus à partir de ces mêmes
+variables au moment du `plan`. La topologie n'est décrite qu'une fois.
+
+## Prérequis
+
+Ces ressources doivent préexister dans le projet ; la configuration se contente
+de les rechercher.
+
+| Ressource | Valeur par défaut | Variable |
+| --- | --- | --- |
+| Réseau externe | `provider-net` | `external_network_name` |
 | Image | `debian-12` | `image_name` |
-| Flavor | `m1.small` | `flavor_name` |
-| Keypair | `mapaire` | `keypair_name` |
+| Gabarit | `m1.small` | `flavor_name` |
+| Paire de clés | `mapaire` | `keypair_name` |
 
-Everything else is created by Terraform, including the tenant network, its
-subnet and the router. Only the external network and the keypair are looked
-up rather than managed.
+Tout le reste est créé par Terraform, y compris le réseau tenant, son
+sous-réseau et le routeur.
 
-## Before the first apply
+Le nom du réseau externe se renseigne dans `10-infra/terraform.tfvars`, fichier
+non versionné dont `terraform.tfvars.example` donne le modèle.
 
-Check these on the remote cloud, in this order:
+## Vérifications préalables
 
-1. **Quota.** Five `m1.small` instances need 5 vCPU, 10 GB RAM and 100 GB of
-   disk. Run `openstack limits show --absolute`.
-2. **External network name.** `openstack network list --external`. The value
-   lives in `10-infra/terraform.tfvars`, which is untracked; copy it from
-   `terraform.tfvars.example`.
-3. **Floating IP.** The tenant is limited to a small number. Release any
-   unattached one with `openstack floating ip list --status DOWN` before
-   applying.
+Avant le premier `apply`, trois points méritent d'être contrôlés sur le cloud :
 
-## Layout
+1. **Le quota.** Cinq instances `m1.small` réclament 5 vCPU, 10 Go de mémoire
+   et 100 Go de disque. `openstack limits show --absolute`.
+2. **Le nom du réseau externe.** `openstack network list --external`.
+3. **Les adresses flottantes.** Le projet n'en obtient qu'un nombre réduit ;
+   libérer celles qui ne servent plus avec
+   `openstack floating ip list --status DOWN`.
 
-The stack is split into two root modules with separate states, so the
-instances can be rebuilt without releasing the single floating IP the tenant
-is allowed.
-
-| Layer | Holds | Lifecycle |
-| --- | --- | --- |
-| `10-infra/` | network, subnet, router, security groups, floating IP | rarely changes |
-| `20-platform/` | ports, instances, cloud-init, generated inventory | rebuilt freely |
-
-`20-platform` reads the layer below through `terraform_remote_state`, pointed
-at `../10-infra/terraform.tfstate`. The dependency is one-way.
-
-## Usage
-
-Apply bottom-up:
+## Mise en œuvre
 
 ```bash
-source ~/jvilardell-openrc.sh
+source ../jvilardell-openrc.sh
 
 cd 10-infra && terraform init && terraform apply
 cd ../20-platform && terraform init && terraform apply
 ```
 
-Then follow the outputs:
+Les sorties fournissent l'URL du site ainsi qu'un bloc de configuration SSH
+prêt à l'emploi :
 
 ```bash
 terraform output site_url
 terraform output -raw ssh_config >> ~/.ssh/config
 ```
 
-Destroy top-down, in the reverse order. Destroying `10-infra` while
-`20-platform` still holds instances leaves the lower layer unable to delete
-its network, and releases the floating IP.
+WordPress présente son assistant d'installation à la première visite : la base,
+l'utilisateur et le point de montage partagé sont déjà en place.
+
+## Destruction
+
+L'ordre s'inverse. Détruire `10-infra` alors que `20-platform` détient encore
+des instances empêcherait la suppression du réseau et libérerait l'adresse
+flottante.
 
 ```bash
 cd 20-platform && terraform destroy
 cd ../10-infra && terraform destroy
 ```
 
-WordPress serves its installation wizard on first visit. The database, the
-user and the shared upload mount are already in place.
+## Limites connues
 
-## Addresses
+Le stockage est éphémère : la base et l'export NFS résident sur les disques des
+instances, qu'une destruction emporte. Les basculer sur des volumes Cinder
+constituerait le prolongement naturel si les données devaient survivre.
 
-Addresses are pinned in `variables.tf` rather than left to DHCP, because the
-HAProxy backend list, the MariaDB grant and the NFS export are all rendered
-from the same values at plan time. Changing the subnet means changing those
-variables together.
+Le répartiteur est un point unique de défaillance, faute d'une seconde adresse
+publique autorisant une bascule. Le service est rendu en HTTP seul, sans
+terminaison TLS, et `WP_HOME` est fixé sur l'adresse flottante.
 
-## Known limitations
-
-- **Storage is ephemeral.** The database and the NFS export live on the
-  instances' ephemeral disks. `terraform destroy`, or an instance rebuild,
-  loses the content. Moving `bdd` and `nfs` to Cinder volumes is the next
-  step if the data has to survive.
-- **The balancer is a single point of failure.** One floating IP means no
-  second balancer and no VRRP.
-- **HTTP only.** No TLS termination on HAProxy yet; `WP_HOME` is pinned to
-  `http://<floating-ip>`.
-- **The MariaDB grant pattern assumes a /24** tenant subnet.
+Enfin, la configuration des services passe par cloud-init, qui ne s'exécute
+qu'au premier démarrage : modifier `haproxy.cfg` impose de recréer la machine.
+C'est précisément ce que la version Ansible lève.
