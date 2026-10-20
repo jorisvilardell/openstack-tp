@@ -27,7 +27,7 @@
   ansible.builtin.meta: flush_handlers
 
 - name: Create the WordPress database
-  community.mysql.mysql_db:
+  ansible.mysql.mysql_db:
     name: "{{ wordpress_db_name }}"
     encoding: utf8mb4
     collation: utf8mb4_unicode_ci
@@ -35,7 +35,7 @@
     login_unix_socket: /run/mysqld/mysqld.sock
 
 - name: Create the WordPress user
-  community.mysql.mysql_user:
+  ansible.mysql.mysql_user:
     name: "{{ wordpress_db_user }}"
     password: "{{ wordpress_db_password }}"
     host: "{{ mysql_client_pattern }}"
