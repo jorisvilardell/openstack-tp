@@ -1,110 +1,143 @@
-# TP2-2 — the same stack, driven by Ansible
+# Version Ansible
 
-Second version of the TP2 exercise. Same topology, same five instances, same
-WordPress behind HAProxy, but Ansible both provisions the OpenStack resources
-and configures the machines. TP2 stays in place; the two are independent and
-must not run against the same project at the same time, since they would fight
-over the same resource names.
+Reconstruction complète de l'architecture WordPress répartie avec Ansible.
+Contrairement à un usage courant de l'outil, Ansible ne se limite pas ici à la
+configuration des machines : il crée également les ressources OpenStack, par
+l'intermédiaire de la collection `openstack.cloud`.
 
 ```
-Internet -> Floating IP -> HAProxy -> web-1 / web-2 -> bdd (MariaDB)
-                                                    -> nfs (wp-content/uploads)
+Internet → IP flottante → HAProxy → web-1 / web-2 → bdd  (MariaDB)
+                                                  → nfs  (médias partagés)
 ```
 
-## Layout
+## Organisation
 
-| Path | Role |
+| Fichier | Rôle |
 | --- | --- |
-| `provision.yml` | creates network, subnet, router, security groups, instances, floating IP |
-| `site.yml` | configures the four tiers in dependency order |
-| `teardown.yml` | removes everything it created |
-| `group_vars/all.yml` | one description of the stack: addresses, names, security rules |
-| `roles/` | `nfs_server`, `database`, `wordpress`, `loadbalancer` |
+| `provision.yml` | crée réseau, sous-réseau, routeur, groupes de sécurité, instances et IP flottante |
+| `site.yml` | configure les quatre étages dans l'ordre de leurs dépendances |
+| `teardown.yml` | démonte l'ensemble, derrière une confirmation explicite |
+| `group_vars/all.yml` | description unique de la pile : adresses, noms, règles de filtrage |
+| `roles/` | `name_resolution`, `nfs_server`, `database`, `wordpress`, `loadbalancer` |
 
-`provision.yml` writes `inventory/hosts.ini` from the addresses it just
-allocated, so the inventory is a product of the run rather than something kept
-by hand. Private hosts reach Ansible through the load balancer as jump host,
-which is the only way in with a single public address.
+`provision.yml` écrit `inventory/hosts.ini` à partir des adresses qu'il vient
+d'allouer. L'inventaire est donc un produit de l'exécution plutôt qu'un
+fichier tenu à la main. Les hôtes privés y reçoivent le répartiteur comme
+machine de rebond, seule voie d'accès possible avec une unique adresse
+publique.
 
-## What differs from TP2
+La description reste centralisée. HAProxy construit sa liste de backends à
+partir du groupe `web`, et le droit d'accès MariaDB dérive du CIDR du
+sous-réseau. Ajouter un frontend se résume à une entrée dans `instances`.
 
-Terraform keeps a state file and computes a diff against it. Ansible does not:
-each module reconciles the live resource with the description at run time. A
-resource deleted outside the playbook is simply recreated on the next run, and
-nothing warns that it had drifted.
+## Ce qui distingue cette version de la version Terraform
 
-The practical consequence is on teardown. `terraform destroy` knows exactly
-what it owns; `teardown.yml` deletes what `group_vars/all.yml` names, so a
-resource renamed in the variables file is orphaned rather than removed.
+Terraform conserve un état et calcule un écart par rapport à lui. Ansible ne
+procède pas ainsi : chaque module réconcilie la ressource vivante avec sa
+description au moment de l'exécution, sans mémoire des passages précédents.
+Une ressource supprimée en dehors du playbook sera simplement recréée, sans
+qu'aucune dérive ne soit signalée.
 
-In exchange, configuration is no longer frozen at first boot. TP2 provisions
-through cloud-init, which runs once: changing `haproxy.cfg` means rebuilding
-the instance. Here, `site.yml` is re-runnable, and changing a template
-reconfigures the running machine.
+La conséquence pratique porte sur la destruction. `terraform destroy` sait
+exactement ce qu'il possède, là où `teardown.yml` supprime ce que
+`group_vars/all.yml` désigne. Renommer une ressource dans ce fichier revient
+donc à l'abandonner plutôt qu'à la détruire.
 
-## Prerequisites
+En échange, la configuration cesse d'être figée au premier démarrage. La
+version Terraform s'appuie sur cloud-init, exécuté une seule fois : y modifier
+`haproxy.cfg` impose de recréer la machine. Ici, `site.yml` se rejoue à
+volonté et reconfigure des serveurs déjà en production.
+
+## Prérequis
 
 ```bash
 sudo pacman -S ansible python-openstacksdk
 ansible-galaxy collection install -r requirements.yml
 ```
 
-These must already exist in the project; the playbooks look them up:
+Ces ressources doivent préexister dans le projet. Les playbooks se contentent
+de les rechercher.
 
-| Resource | Default | Variable |
+| Ressource | Valeur par défaut | Variable |
 | --- | --- | --- |
-| External network | `provider-net` | `external_network` |
+| Réseau externe | `provider-net` | `external_network` |
 | Image | `debian-12` | `image_name` |
-| Flavor | `m1.small` | `flavor_name` |
-| Keypair | `mapaire` | `keypair_name` |
+| Gabarit | `m1.small` | `flavor_name` |
+| Paire de clés | `mapaire` | `keypair_name` |
 
-Everything else is created by `provision.yml`.
+Tout le reste est créé par `provision.yml`.
 
-## Usage
+## Mise en œuvre
 
 ```bash
-source ~/jvilardell-openrc.sh
-cd tp2-2
+source ../jvilardell-openrc.sh
 
 ansible-playbook provision.yml
 ansible-playbook site.yml
 ```
 
-The playbooks read the same `OS_*` environment variables as the OpenStack
-client, through openstacksdk. Then open `http://<floating-ip>`, which
-`provision.yml` prints at the end, and WordPress serves its install wizard.
+Les playbooks lisent les mêmes variables d'environnement `OS_*` que le client
+OpenStack, par l'intermédiaire d'openstacksdk. `provision.yml` affiche
+l'adresse publique en fin d'exécution. WordPress présente ensuite son
+assistant d'installation à la première visite.
 
-Re-running `site.yml` is the normal way to apply a configuration change:
+Appliquer une modification de configuration consiste à rejouer `site.yml`, au
+besoin restreint à un étage :
 
 ```bash
 ansible-playbook site.yml --limit loadbalancer
-ansible-playbook site.yml --limit web
 ```
 
-## Teardown
+## Difficulté rencontrée : l'absence de résolution DNS
+
+Le premier déploiement a échoué sur un message trompeur :
+`No package matching 'haproxy' is available`. Le paquet figure pourtant dans
+Debian 12 et les machines disposaient de 18 Go libres.
+
+Les mesures ont écarté les hypothèses successivement. Le trafic sortant
+fonctionne, une connexion TCP vers l'adresse du CDN Debian aboutissant sans
+difficulté. En revanche aucune résolution de nom n'était possible : le
+résolveur de Neutron répond `REFUSED`, et les serveurs publics déclarés par le
+cloud, `8.8.8.8` et `8.8.4.4`, se révèlent injoignables sur l'ensemble des
+ports, tout comme la passerelle externe. La démonstration a tenu en une ligne,
+une entrée ajoutée manuellement dans `/etc/hosts` suffisant à rendre les
+dépôts accessibles.
+
+Deux correctifs en découlent. Le rôle `name_resolution` résout les noms requis
+depuis le poste d'administration, qui dispose lui d'un DNS opérationnel, puis
+fige ces adresses dans le `/etc/hosts` de chaque instance avant toute
+installation. Le rafraîchissement du cache APT a par ailleurs dû être rendu
+inconditionnel, `cache_valid_time` tenant pour valide le cache vide laissé par
+l'échec du premier démarrage.
+
+Il s'agit d'un contournement, assumé comme tel. Les adresses figées se
+périmeront le jour où ces CDN changeront de numérotation. La solution pérenne
+consiste à obtenir un résolveur joignable auprès de l'exploitant du cloud.
+
+## Destruction
 
 ```bash
 ansible-playbook teardown.yml -e confirm=yes
 ```
 
-The guard is deliberate: the playbook deletes the instances with their
-ephemeral disks, releases the floating IP to the shared pool and removes the
-network. None of it can be undone.
+La confirmation est délibérée. Le playbook supprime les instances avec leurs
+disques éphémères, rend l'adresse flottante au pool partagé et détruit le
+réseau. Rien de tout cela ne se rattrape.
 
 ## Secrets
 
-The database password and the eight WordPress salts are generated on the
-controller on first run and cached under `.secrets/`, untracked. The cache is
-what keeps both frontends on identical salts across runs — regenerating them
-would invalidate every live session. Back that directory up, or accept that a
-fresh controller means fresh credentials and a `wp-config.php` that no longer
-matches the existing database user.
+Le mot de passe de la base ainsi que les huit clés de salage WordPress sont
+générés sur le poste d'administration au premier passage, puis conservés dans
+`.secrets/`, répertoire non versionné.
 
-## Known limitations
+Ce cache remplit une fonction précise : il garantit des clés de salage
+identiques sur les deux frontends d'une exécution à l'autre. Les régénérer
+invaliderait toutes les sessions ouvertes et produirait un `wp-config.php` en
+désaccord avec l'utilisateur déjà créé en base.
 
-- **Storage is ephemeral.** The database and the NFS export live on the
-  instances' disks. A teardown loses both.
-- **The balancer is a single point of failure.** One floating IP means no
-  second balancer.
-- **HTTP only.** No TLS termination; `WP_HOME` is pinned to the floating IP.
-- **The MariaDB grant pattern assumes a /24** tenant subnet.
+## Limites connues
+
+Le stockage est éphémère, la base et l'export NFS résidant sur les disques des
+instances. Le répartiteur constitue un point unique de défaillance, faute
+d'une seconde adresse publique. Le service est rendu en HTTP seul, sans
+terminaison TLS.
