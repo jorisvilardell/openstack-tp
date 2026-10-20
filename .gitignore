@@ -10,6 +10,6 @@ terraform.tfvars
 
 *-openrc.sh
 *openrc*
-tp3/.secrets/
-tp3/inventory/hosts.ini
+tp2-2/.secrets/
+tp2-2/inventory/hosts.ini
 tp-cli.zip

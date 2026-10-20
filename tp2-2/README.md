@@ -1,4 +1,4 @@
-# TP3 — the same stack, driven by Ansible
+# TP2-2 — the same stack, driven by Ansible
 
 Second version of the TP2 exercise. Same topology, same five instances, same
 WordPress behind HAProxy, but Ansible both provisions the OpenStack resources
@@ -64,7 +64,7 @@ Everything else is created by `provision.yml`.
 
 ```bash
 source ~/jvilardell-openrc.sh
-cd tp3
+cd tp2-2
 
 ansible-playbook provision.yml
 ansible-playbook site.yml
