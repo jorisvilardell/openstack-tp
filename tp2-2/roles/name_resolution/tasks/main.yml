@@ -1,0 +1,22 @@
+---
+- name: Resolve the external hostnames from the controller
+  ansible.builtin.command: getent ahostsv4 {{ item }}
+  register: resolved_hosts
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ offline_hostnames }}"
+
+- name: Pin the resolved addresses in /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '\s{{ item.item }}$'
+    line: "{{ item.stdout_lines[0].split()[0] }} {{ item.item }}"
+    state: present
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ resolved_hosts.results }}"
+  loop_control:
+    label: "{{ item.item }}"

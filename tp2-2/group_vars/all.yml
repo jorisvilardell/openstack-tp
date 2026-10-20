@@ -9,6 +9,12 @@ allocation_pool_start: 192.168.10.100
 allocation_pool_end: 192.168.10.200
 dns_nameservers: []
 
+offline_hostnames:
+  - deb.debian.org
+  - security.debian.org
+  - wordpress.org
+  - downloads.wordpress.org
+
 image_name: debian-12
 flavor_name: m1.small
 keypair_name: mapaire
